@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build with cl.exe",
+      "type": "shell",
+      // Używamy kompilatora Microsoftu (cl.exe)
+      "command": "cl.exe",
+      "args": [
+        "/EHsc", // Włącz obsługę wyjątków C++
+        "/Zi", // Dodaj informacje do debugowania
+        "/std:c++17", // Użyj standardu C++17
+        "${file}", // Kompiluj aktualnie otwarty plik
+        "/link", // Przekaż resztę argumentów do linkera
+        "/out:${fileDirname}\\${fileBasenameNoExtension}.exe" // Nazwa pliku wyjściowego
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true // Ustaw to jako domyślne zadanie budowania
+      },
+      "presentation": {
+        "reveal": "always"
+      },
+      // Użyj problem matchera Microsoftu, aby VS Code rozumiał błędy
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
