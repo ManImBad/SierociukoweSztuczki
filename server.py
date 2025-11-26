@@ -1,16 +1,14 @@
 import asyncio
 import websockets
 import json
-import socket # <--- NOWY IMPORT
+import socket
 
 # --- Konfiguracja "mostu" do C++ ---
 CPP_HOST = '127.0.0.1' # localhost
-CPP_PORT = 9999       # Dowolny wolny port, na którym C++ będzie słuchał
-# Tworzymy gniazdo UDP (AF_INET = IPv4, SOCK_DGRAM = UDP)
+CPP_PORT = 9999       # Port nasłuchujący w aplikacji C++
 udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-print(f"Będę wstrzykiwać dane do C++ na adresie udp://{CPP_HOST}:{CPP_PORT}")
+print(f"Będę wstrzykiwać SUROWE dane do C++ na adresie udp://{CPP_HOST}:{CPP_PORT}")
 # --- Koniec konfiguracji ---
-
 
 async def handler(websocket, path):
     print(f"Client connected from {websocket.remote_address}")
@@ -18,35 +16,43 @@ async def handler(websocket, path):
         async for message in websocket:
             try:
                 data = json.loads(message)
+                
+                # 1. Pobieramy sekcje z JSON-a
                 accel = data.get('accelerometer', {})
-                orient = data.get('orientation', {})
-                
-                ax = accel.get('x') or 0
-                ay = accel.get('y') or 0
-                az = accel.get('z') or 0
-                
-                opitch = orient.get('pitch') or 0
-                oroll = orient.get('roll') or 0
-                oyaw = orient.get('yaw') or 0
+                gyro  = data.get('gyroscope', {})
+                mag   = data.get('magnetometer', {})
+                ts    = data.get('timestamp', 0) # Timestamp (opcjonalny, ale przydatny do fuzji)
 
-                # --- DRUKUJEMY W KONSOLI (tak jak wcześniej) ---
-                print(f"  Accelerometer: x={ax:.2f}, y={ay:.2f}, z={az:.2f}")
-                print(f"  Orientation: Pitch={opitch:.2f}, Roll={oroll:.2f}, Yaw={oyaw:.2f}")
-                print("-" * 20)
+                # 2. Pobieramy wartości (x, y, z) - domyślnie 0.0 jeśli brak
+                ax, ay, az = accel.get('x', 0), accel.get('y', 0), accel.get('z', 0)
+                gx, gy, gz = gyro.get('x', 0),  gyro.get('y', 0),  gyro.get('z', 0)
+                mx, my, mz = mag.get('x', 0),   mag.get('y', 0),   mag.get('z', 0)
 
-                # --- NOWA LINIA: WSTRZYKNIĘCIE DO C++ ---
-                # Tworzymy prosty string, który C++ łatwo zrozumie
-                # Format: "pitch roll yaw x y z"
-                payload = f"{opitch:.2f} {oroll:.2f} {oyaw:.2f} {ax:.2f} {ay:.2f} {az:.2f}"
+                # --- DRUKUJEMY W KONSOLI (Podgląd danych) ---
+                print(f"TIMESTAMP: {ts}")
+                print(f"  ACC: x={ax:.2f}, y={ay:.2f}, z={az:.2f}")
+                print(f"  GYR: x={gx:.2f}, y={gy:.2f}, z={gz:.2f}")
+                print(f"  MAG: x={mx:.2f}, y={my:.2f}, z={mz:.2f}")
+                print("-" * 30)
+
+                # --- WSTRZYKNIĘCIE DO C++ ---
+                # Nowy format payloadu dla fuzji danych.
+                # Kolejność: ax ay az gx gy gz mx my mz timestamp
+                # Razem 10 wartości oddzielonych spacją.
                 
-                # Wysyłamy string jako bajty przez gniazdo UDP
+                payload = (
+                    f"{ax:.4f} {ay:.4f} {az:.4f} "
+                    f"{gx:.4f} {gy:.4f} {gz:.4f} "
+                    f"{mx:.4f} {my:.4f} {mz:.4f} "
+                    f"{ts}"
+                )
+                
+                # Wysyłamy pakiet UDP
                 udp_socket.sendto(payload.encode('utf-8'), (CPP_HOST, CPP_PORT))
-                # --- KONIEC NOWEJ LINII ---
 
             except Exception as e_inner:
-                print(f"!!! BŁĄD PRZETWARZANIA WIADOMOŚCI: {e_inner}")
-                print(f"    Problematic data: {message[:200]}...")
-                print("-" * 20)
+                print(f"!!! BŁĄD PRZETWARZANIA: {e_inner}")
+                # print(f"Data: {message}") 
 
     except websockets.exceptions.ConnectionClosed:
         print(f"Client {websocket.remote_address} disconnected")
@@ -55,7 +61,7 @@ async def handler(websocket, path):
 
 async def main():
     async with websockets.serve(handler, "0.0.0.0", 8081):
-        print("WebSocket server started.")
+        print("WebSocket server started (Raw Sensors Mode).")
         print("Listening on ws://0.0.0.0:8081")
         await asyncio.Future()  # Run forever
 
